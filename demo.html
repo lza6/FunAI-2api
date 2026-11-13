@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FunAI 逆向 Demo</title>
+<style>
+:root {
+  --bg: #0f1115; --panel: #171b23; --line: #2a3040; --text: #e8eaf0;
+  --muted: #8a93a6; --accent: #4f8cff; --ok: #34c77b; --warn: #ffb020; --bad: #ff5d5d;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+.sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.card h2 { font-size: 15px; margin: 0 0 10px; color: var(--accent); }
+.row { display: flex; gap: 8px; margin: 8px 0; }
+input, select, textarea { flex: 1; background: #0d1016; border: 1px solid var(--line);
+  color: var(--text); border-radius: 6px; padding: 8px 10px; font-size: 13px; }
+button { background: var(--accent); border: 0; color: #fff; border-radius: 6px;
+  padding: 8px 14px; font-size: 13px; cursor: pointer; }
+button:active { opacity: .8; }
+pre { background: #0b0e13; border: 1px solid var(--line); border-radius: 6px;
+  padding: 10px; font-size: 12px; overflow: auto; max-height: 300px; color: #c7d0e0; }
+img.result { max-width: 100%; border-radius: 8px; margin-top: 8px; display: block; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px;
+  background: #22304a; color: var(--muted); margin-left: 6px; }
+.badge.ok { background: #123527; color: var(--ok); }
+.badge.bad { background: #3a1a1a; color: var(--bad); }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+td, th { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; }
+th { color: var(--muted); font-weight: 500; }
+.note { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>FunAI（ASKI AI Chatbot）逆向 Demo</h1>
+  <div class="sub">包名 com.aski.chatgpt.ai.chatbot · 上游 cognise.art / vicuna.cognise.art · 本页直连上游</div>
+
+  <div class="cards">
+    <div class="card">
+      <h2>链路状态</h2>
+      <table id="status">
+        <tr><th>接口</th><th>状态</th><th>说明</th></tr>
+        <tr><td>POST /handshake/</td><td><span class="badge ok">开放</span></td><td>任意 mobile_id 注册，返回 token</td></tr>
+        <tr><td>GET /v3/models/</td><td><span class="badge ok">开放</span></td><td>当前仅 gemini-3.8-flash</td></tr>
+        <tr><td>POST /v3/chat/*</td><td><span class="badge bad">403</span></td><td>服务端风控 453142，需真机动态</td></tr>
+        <tr><td>POST /api/mobile/txt2img/generate/v4</td><td><span class="badge ok">开放</span></td><td>固定 token，按 prompt 查历史图库</td></tr>
+        <tr><td>GET /api/styles|samplers|inspirations</td><td><span class="badge ok">开放</span></td><td>元数据全量可读</td></tr>
+      </table>
+      <div class="note">聊天 V3 的 403 与请求频率/头部/UA 无关，是服务端按 token+环境的风控；图片端点为历史图库检索语义，非真实生成。</div>
+    </div>
+
+    <div class="card">
+      <h2>图片生成（图库检索） <span class="badge ok">可用</span></h2>
+      <div class="row"><input id="prompt" value="dragon" placeholder="提示词（单个英文词命中率最高）"><button onclick="gen()">生成</button></div>
+      <div class="row">
+        <select id="styleSel" style="flex:1"><option value="19">No Style (19)</option></select>
+        <button onclick="loadStyles()">刷新风格</button>
+      </div>
+      <div class="note" id="genInfo"></div>
+      <img id="genImg" class="result" alt="">
+      <pre id="genRaw" style="display:none"></pre>
+    </div>
+
+    <div class="card">
+      <h2>聊天 V3 握手演示 <span class="badge">部分可用</span></h2>
+      <div class="row"><button onclick="handshake()">注册新用户（handshake）</button><button onclick="models()">拉取模型</button></div>
+      <pre id="chatOut">点击按钮测试：handshake 可稳定返回 user_id/token；后续 chat/completions 被服务端 403 拒绝。</pre>
+    </div>
+
+    <div class="card">
+      <h2>关键请求/响应</h2>
+      <pre>{
+  "POST": "/api/mobile/txt2img/generate/v4",
+  "Authorization": "token 7bb91a...c04 (硬编码拦截器)",
+  "body": {
+    "generation_steps": 20, "guidance_scale": 7,
+    "sampler_name": "Euler a", "sampler_index": "Euler a",
+    "generation_prompt": "cat", "negative_prompt": "",
+    "generation_seed": 1, "generation_id": 7,
+    "batch_size": 1, "sid": 19,
+    "img_ratio": "1:1", "hit_point": "mobile"
+  }
+}</pre>
+      <div class="note">sid = /api/styles 的风格 id；generation_id 来自 Firebase RemoteConfig（当前 7）。带 tz/user_uuid 字段会被 400 拒绝。</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const STORAGE = '';
+const COGNISE = 'http://127.0.0.1:8791';
+const VIC = 'http://127.0.0.1:8791/vicuna';
+const TOKEN = '7bb91a6699cc3794750101ce0354d80195f07c04';
+
+async function req(url, method='GET', body=null, withToken=true) {
+  const headers = {'Accept':'application/json'};
+  if (body !== null) headers['Content-Type'] = 'application/json';
+  if (withToken) headers['Authorization'] = 'token ' + TOKEN;
+  const r = await fetch(url, {method, headers, body: body!==null ? JSON.stringify(body) : undefined});
+  const t = await r.text();
+  let j = null; try { j = JSON.parse(t); } catch {}
+  return {status: r.status, text: t, json: j};
+}
+
+async function loadStyles() {
+  const r = await req(COGNISE + '/api/styles');
+  if (r.json && r.json.data) {
+    const sel = document.getElementById('styleSel');
+    sel.innerHTML = r.json.data.map(s => `<option value="${s.id}">${s.title} (${s.id})</option>`).join('');
+  }
+}
+
+async function gen() {
+  const p = document.getElementById('prompt').value.trim();
+  const sid = parseInt(document.getElementById('styleSel').value || '19', 10);
+  const info = document.getElementById('genInfo');
+  const img = document.getElementById('genImg');
+  const raw = document.getElementById('genRaw');
+  raw.style.display = 'none'; img.removeAttribute('src');
+  if (!p) { info.textContent = '请输入提示词'; return; }
+  info.textContent = '请求中…';
+  const body = { generation_steps:20, guidance_scale:7, sampler_name:'Euler a',
+    sampler_index:'Euler a', generation_prompt:p, negative_prompt:'',
+    generation_seed:1, generation_id:7, batch_size:1, sid, img_ratio:'1:1', hit_point:'mobile' };
+  const r = await req(COGNISE + '/api/mobile/txt2img/generate/v4', 'POST', body);
+  raw.textContent = r.text; raw.style.display = 'block';
+  if (r.json && r.json.status === 'success') {
+    const d = r.json.data;
+    info.innerHTML = `id=${d.id} · style_id=${d.generation_info.style_id} · 服务端按 prompt 返回历史图`;
+    img.src = COGNISE + d.images[0].image;
+  } else {
+    info.textContent = '失败: ' + (r.json ? r.json.message : r.status);
+  }
+}
+
+async function handshake() {
+  const out = document.getElementById('chatOut');
+  out.textContent = 'handshake…';
+  const r = await req(VIC + '/handshake/', 'POST', { mobile_id: crypto.randomUUID() }, false);
+  let msg = r.status + ' ' + r.text.slice(0, 300);
+  if (r.json && r.json.data && r.json.data.token) {
+    const m = await req(VIC + '/v3/models/', 'GET', null, false);
+    msg += '\n\n/v3/models/ -> ' + m.status + ' ' + m.text.slice(0, 200);
+    const c = await req(VIC + '/v3/chat/completions/', 'POST', {
+      mode:'auto', model:'gemini-3.8-flash', temperature:0.3, maxTokens:100,
+      messages:[{role:'user',content:'hi'}] }, false);
+    msg += '\n\nchat/completions -> ' + c.status + ' ' + c.text.slice(0, 150);
+  }
+  out.textContent = msg;
+}
+
+async function models() {
+  const out = document.getElementById('chatOut');
+  const r = await req(VIC + '/v3/models/', 'GET', null, false);
+  out.textContent = r.status + '\n' + r.text.slice(0, 600);
+}
+
+loadStyles();
+</script>
+</body>
+</html>
