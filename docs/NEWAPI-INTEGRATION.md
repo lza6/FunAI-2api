@@ -61,7 +61,7 @@ new-api 管理后台 → 渠道 → 添加渠道：
 
 | 现象 | 原因 | 处理 |
 |------|------|------|
-| images 502 `Invalid Params Sent!` | prompt 含停用词/标点/过长 | 换单词或双实词 prompt 重试 |
+| images 502 `Invalid Params Sent!` | prompt 含停用词/标点/过长，或图库查无此图（prompt miss） | 换单词或双实词 prompt 重试；常见名词（cat/dog/car…）命中率 12/12 |
 | images 502 `prompt failed profanity check` | 上游 NSFW 词表 | 属上游策略，透传即可 |
 | chat 502 `upstream_denied 453142` | 上游风控 | 等动态突破；协议层已全通 |
 | 网关起不来 8792 被占 | 残留进程 | `netstat -ano | findstr 8792` 找 PID taskkill |
